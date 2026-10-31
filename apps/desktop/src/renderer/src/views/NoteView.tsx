@@ -222,6 +222,8 @@ export default function NoteView() {
   const titleRenameCancelRef = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  /** 每藏一级时记录的溢出宽度（栈，后藏先放），见 reflowToolbar */
+  const hiddenOverflowRef = useRef<number[]>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<EditorHandle>(null);
   const loadedRef = useRef(false);
@@ -278,10 +280,18 @@ export default function NoteView() {
       (sum, c) => sum + (c as HTMLElement).offsetWidth,
       0,
     );
+    const overflowAt = hiddenOverflowRef.current;
     if (natural > avail + 1) {
       if (hiddenEdit < 3) setHiddenEdit((v) => v + 1);
       else if (hiddenAux < 2) setHiddenAux((v) => v + 1);
+      else return;
+      overflowAt.push(natural);
     } else if ((hiddenAux > 0 || hiddenEdit > 0) && avail - natural > 30) {
+      // 放回门槛 = 藏它之前的溢出宽度：辅助区按钮/保存状态文案可能宽于 30px，
+      // 只看 30px 富余会「放回→溢出→藏→富余→放回」每帧振荡，触发 React #185
+      // 渲染层崩溃（透明窗口整窗消失）
+      if (avail + 1 < (overflowAt[overflowAt.length - 1] ?? 0)) return;
+      overflowAt.pop();
       if (hiddenAux > 0) setHiddenAux((v) => v - 1);
       else setHiddenEdit((v) => v - 1);
     }
