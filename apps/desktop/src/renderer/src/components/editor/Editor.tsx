@@ -15,7 +15,8 @@ import {
 } from '@milkdown/core';
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from '@milkdown/react';
 import { Plugin, PluginKey } from '@milkdown/prose/state';
-import { DOMParser, DOMSerializer, Slice } from '@milkdown/prose/model';
+import { DOMParser, DOMSerializer, Fragment, Slice } from '@milkdown/prose/model';
+import type { Node as PMNode } from '@milkdown/prose/model';
 import {
   commonmark,
   toggleStrongCommand,
@@ -79,6 +80,30 @@ export interface EditorProps {
   mode?: 'sticky' | 'full';
   /** 笔记所在子文件夹（notes/ 相对路径）：粘贴图片时按深度生成 ../ 前缀 */
   folder?: string;
+}
+
+/** 粘贴文本的软换行拆段：markdown 里不隔空行的多行属同一段，Milkdown 解析成
+ *  isInline 的 hardbreak（显示为空格）——多行文本粘进来挤成一行。按软换行
+ *  拆成多段，与回车分段、纯文本粘贴「分行成段」一致；真硬换行不动 */
+function splitSoftBreaks(fragment: Fragment): Fragment {
+  const nodes: PMNode[] = [];
+  fragment.forEach((node) => {
+    if (node.type.name !== 'paragraph') {
+      nodes.push(node.isTextblock ? node : node.copy(splitSoftBreaks(node.content)));
+      return;
+    }
+    let line: PMNode[] = [];
+    node.content.forEach((child) => {
+      if (child.type.name === 'hardbreak' && child.attrs.isInline) {
+        nodes.push(node.copy(Fragment.from(line)));
+        line = [];
+      } else {
+        line.push(child);
+      }
+    });
+    nodes.push(node.copy(Fragment.from(line)));
+  });
+  return Fragment.from(nodes);
 }
 
 /** clipboardTextSerializer 参数的最小结构类型（避免仅为类型引入 prosemirror 值依赖） */
@@ -469,7 +494,7 @@ const MilkdownEditor = forwardRef<EditorHandle, EditorProps>(function MilkdownEd
           clipboardTextParser: (text, context, plain, view) => {
             if (!plain) {
               try {
-                return Slice.maxOpen(ctx.get(parserCtx)(text).content);
+                return Slice.maxOpen(splitSoftBreaks(ctx.get(parserCtx)(text).content));
               } catch {
                 // 解析失败也要保留剪贴板原文，继续走下面的普通文本处理。
               }

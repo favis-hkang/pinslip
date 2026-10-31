@@ -117,6 +117,14 @@ async function runPasteTests() {
     paste(view, '普通正文\r\n\r\n第二段');
     check(dom.querySelectorAll('p').length === 2 && dom.textContent === '普通正文第二段', dom.innerHTML);
   });
+  await test('multi-line text keeps its lines', async () => {
+    const { view, dom, markdown } = await mount();
+    paste(view, '第一行\n第二行\r\n第三行');
+    const lines = [...dom.querySelectorAll('p')].map((p) => p.textContent);
+    check(JSON.stringify(lines) === JSON.stringify(['第一行', '第二行', '第三行']), dom.innerHTML);
+    await wait(300);
+    check(markdown().trim() === '第一行\n\n第二行\n\n第三行', markdown());
+  });
   await test('parser failure preserves clipboard text', async () => {
     const { view, dom } = await mount();
     activeEditor!.action((ctx) => { ctx.set(parserCtx, () => { throw new Error('test parser failure'); }); });
