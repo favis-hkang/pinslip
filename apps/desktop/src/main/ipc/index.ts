@@ -13,7 +13,7 @@ import { createTray, destroyTray, refreshTrayMenu } from '../tray';
 import { resolveSystemLanguage } from '../../shared/languages';
 import { startVaultWatch } from '../services/vault-watch';
 import { checkForUpdate, getUpdateState, quitAndInstall } from '../updater';
-import { rebindBlankNoteShortcut, rebindQuickCaptureShortcut } from '../shortcuts';
+import { rebindBlankNoteShortcut, rebindQuickCaptureShortcut, rebindToggleNotesShortcut } from '../shortcuts';
 import { GLOBAL_SHORTCUT_KEYS } from '../../shared/shortcuts';
 
 interface IpcContext {
@@ -197,7 +197,7 @@ export function registerIpcHandlers({ windowManager, goProcess }: IpcContext): v
 
   // 高级设置：整对象读取（缺省已补）；按键部分更新。trayIcon 变化立即
   // 应用（销毁/重建托盘），taskbarIcon 变化立即应用（主窗口 setSkipTaskbar，
-  // 窗口未创建时由建窗读取补齐），blankNoteShortcut/quickCaptureShortcut 变化原子重绑
+  // 窗口未创建时由建窗读取补齐），blankNoteShortcut/quickCaptureShortcut/toggleNotesShortcut 变化原子重绑
   // 全局快捷键（重绑失败抛错回渲染层，设置不持久化、旧绑定不丢），其余字段持久化即生效，
   // 返回补齐后的完整对象
   ipcMain.handle(IPC.SettingsGetAdvanced, () => getAdvanced());
@@ -227,6 +227,9 @@ export function registerIpcHandlers({ windowManager, goProcess }: IpcContext): v
     ) {
       rebindQuickCaptureShortcut(patch.quickCaptureShortcut);
     }
+    if (patch.toggleNotesShortcut !== undefined && patch.toggleNotesShortcut !== before.toggleNotesShortcut) {
+      rebindToggleNotesShortcut(patch.toggleNotesShortcut);
+    }
     const autoStartEnabled = patch.autoStartHidden !== undefined ? getAutoStart() : false;
     try {
       setAdvanced(patch);
@@ -234,6 +237,7 @@ export function registerIpcHandlers({ windowManager, goProcess }: IpcContext): v
       // 组合更新包含剪贴板偏好时，磁盘失败同样回滚已重绑的键位。
       if (patch.blankNoteShortcut !== undefined) rebindBlankNoteShortcut(before.blankNoteShortcut);
       if (patch.quickCaptureShortcut !== undefined) rebindQuickCaptureShortcut(before.quickCaptureShortcut);
+      if (patch.toggleNotesShortcut !== undefined) rebindToggleNotesShortcut(before.toggleNotesShortcut);
       throw error;
     }
     if (patch.autoStartHidden !== undefined && autoStartEnabled) setAutoStart(true);
@@ -246,7 +250,8 @@ export function registerIpcHandlers({ windowManager, goProcess }: IpcContext): v
       else destroyTray();
     }
     // 菜单从 getAdvanced 读键位，必须等新设置持久化后再重建。
-    if (before.quickCaptureShortcut !== after.quickCaptureShortcut) refreshTrayMenu();
+    if (before.quickCaptureShortcut !== after.quickCaptureShortcut ||
+      before.toggleNotesShortcut !== after.toggleNotesShortcut) refreshTrayMenu();
     if (before.taskbarIcon !== after.taskbarIcon) {
       windowManager.setAllWindowsSkipTaskbar(!after.taskbarIcon);
     }

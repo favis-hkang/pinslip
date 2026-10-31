@@ -53,7 +53,7 @@ import type {
   SyncStatus,
   UpdateState,
 } from '@shared/types';
-import { GLOBAL_SHORTCUT_KEYS, GLOBAL_SHORTCUT_LABEL_KEYS } from '@shared/shortcuts';
+import { GLOBAL_SHORTCUT_LABEL_KEYS, shortcutKeysFor } from '@shared/shortcuts';
 import { foldersApi, notesApi, settingsApi, trashApi } from '../api/notes';
 import type { TrashStats } from '../api/notes';
 import { syncApi } from '../api/sync';
@@ -214,6 +214,11 @@ export default function MainView() {
   /** 速记全局快捷键（缺省 ctrl+shift+n 保持现状）+ 注册失败提示态（同空白便签模式） */
   const [quickCaptureShortcut, setQuickCaptureShortcut] = useState<GlobalShortcutKey>('ctrl+shift+n');
   const [quickCaptureShortcutError, setQuickCaptureShortcutError] = useState(false);
+  const [toggleNotesShortcut, setToggleNotesShortcut] = useState<GlobalShortcutKey>('off');
+  const [toggleNotesShortcutError, setToggleNotesShortcutError] = useState(false);
+  /** 本平台可选的全局快捷键键位（仅 Windows 键位按平台过滤；平台未知前按非 Windows 处理） */
+  const [platform, setPlatform] = useState('');
+  const shortcutKeys = useMemo(() => shortcutKeysFor(platform), [platform]);
   /** 工具栏按钮自定义顺序（高级设置拖拽排序；缺省 = 现状顺序）。
    *  ref 与 state 同源：拖拽松手结算时读现值，避开闭包旧值 */
   const [toolbarButtons, setToolbarButtonsState] = useState<string[]>(() => [
@@ -555,6 +560,13 @@ export default function MainView() {
     setMoveFilter('');
   }, [moveTarget]);
 
+  useEffect(() => {
+    window.api
+      .getRuntimeInfo()
+      .then((info) => setPlatform(info.platform))
+      .catch(() => {});
+  }, []);
+
   // 挂载即读高级设置：主题要在首帧就位（无「先浅色一闪再变深」窗口期），
   // 托盘/任务栏图标、新便签落点与主题同一次 getAdvanced 调用
   useEffect(() => {
@@ -570,6 +582,7 @@ export default function MainView() {
         setBlankNoteShortcut(a.blankNoteShortcut);
         setBlankNoteClipboard(a.blankNoteClipboard);
         setQuickCaptureShortcut(a.quickCaptureShortcut);
+        setToggleNotesShortcut(a.toggleNotesShortcut);
         setToolbarButtons(sanitizeToolbarButtons(a.toolbarButtons));
       })
       .catch(() => {});
@@ -611,6 +624,7 @@ export default function MainView() {
         setBlankNoteShortcut(a.blankNoteShortcut);
         setBlankNoteClipboard(a.blankNoteClipboard);
         setQuickCaptureShortcut(a.quickCaptureShortcut);
+        setToggleNotesShortcut(a.toggleNotesShortcut);
         setToolbarButtons(sanitizeToolbarButtons(a.toolbarButtons));
       })
       .catch(() => {});
@@ -840,6 +854,20 @@ export default function MainView() {
       });
     },
     [quickCaptureShortcut],
+  );
+
+  // 显示/隐藏便签快捷键（高级设置）：同速记的乐观切换 + 失败回滚提示模式
+  const changeToggleNotesShortcut = useCallback(
+    (next: GlobalShortcutKey) => {
+      const prev = toggleNotesShortcut;
+      setToggleNotesShortcut(next);
+      setToggleNotesShortcutError(false);
+      window.api.setAdvanced({ toggleNotesShortcut: next }).catch(() => {
+        setToggleNotesShortcut(prev);
+        setToggleNotesShortcutError(true);
+      });
+    },
+    [toggleNotesShortcut],
   );
 
   // 界面语言切换：乐观更新，立即生效（i18n.changeLanguage）并持久化到主进程设置
@@ -1498,7 +1526,7 @@ export default function MainView() {
                   <span className="settings-toggle__thumb" />
                 </button>
               </div>
-              {/* 速记全局快捷键：共用键位池，已被空白便签快捷键占用的键位禁用 */}
+              {/* 速记全局快捷键：共用键位池，已被其他快捷键占用的键位禁用 */}
               <div className="settings-panel__row">
                 <KeyboardIcon className="settings-panel__row-icon" />
                 <span className="settings-panel__label">{t('settings.quickCaptureShortcut')}</span>
@@ -1507,8 +1535,8 @@ export default function MainView() {
                   value={quickCaptureShortcut}
                   onChange={(e) => changeQuickCaptureShortcut(e.target.value as GlobalShortcutKey)}
                 >
-                  {GLOBAL_SHORTCUT_KEYS.map((key) => (
-                    <option key={key} value={key} disabled={key === blankNoteShortcut}>
+                  {shortcutKeys.map((key) => (
+                    <option key={key} value={key} disabled={key === blankNoteShortcut || key === toggleNotesShortcut}>
                       {t(GLOBAL_SHORTCUT_LABEL_KEYS[key])}
                     </option>
                   ))}
@@ -2132,11 +2160,11 @@ export default function MainView() {
                     disabled={blankNoteShortcutBusy || blankNoteClipboardBusy}
                     onChange={(e) => changeBlankNoteShortcut(e.target.value as GlobalShortcutKey)}
                   >
-                    {GLOBAL_SHORTCUT_KEYS.map((key) => (
+                    {shortcutKeys.map((key) => (
                       <option
                         key={key}
                         value={key}
-                        disabled={key === quickCaptureShortcut}
+                        disabled={key === quickCaptureShortcut || key === toggleNotesShortcut}
                       >
                         {t(GLOBAL_SHORTCUT_LABEL_KEYS[key])}
                       </option>
@@ -2171,6 +2199,30 @@ export default function MainView() {
                   </div>
                   {blankNoteClipboardError && <div className="settings-panel__error" role="alert">{t('settings.blankNoteClipboardError')}</div>}
                 </div>
+                {/* 显示/隐藏全部便签快捷键：共用键位池，已被其他快捷键占用的键位禁用 */}
+                <div className="settings-panel__row">
+                  <KeyboardIcon className="settings-panel__row-icon" />
+                  <span className="settings-panel__label">{t('settings.toggleNotesShortcut')}</span>
+                  <select
+                    className="settings-panel__select"
+                    value={toggleNotesShortcut}
+                    aria-label={t('settings.toggleNotesShortcut')}
+                    onChange={(e) => changeToggleNotesShortcut(e.target.value as GlobalShortcutKey)}
+                  >
+                    {shortcutKeys.map((key) => (
+                      <option key={key} value={key} disabled={key === quickCaptureShortcut || key === blankNoteShortcut}>
+                        {t(GLOBAL_SHORTCUT_LABEL_KEYS[key])}
+                      </option>
+                    ))}
+                    <option value="off">{t('settings.shortcutOff')}</option>
+                  </select>
+                </div>
+                <div className="settings-panel__hint">{t('settings.toggleNotesShortcutHint')}</div>
+                {toggleNotesShortcutError && (
+                  <div className="settings-panel__error">
+                    {t('settings.toggleNotesShortcutRegisterFailed')}
+                  </div>
+                )}
                 {/* 工具栏按钮排序：指针拖拽换位（便签组同款模式，不用 HTML5 DnD），
                     前 8 位直接显示在便签工具栏，超出位次进 ⋯ 菜单找回；
                     即改即存即生效（主进程广播，便签窗口即时重排） */}

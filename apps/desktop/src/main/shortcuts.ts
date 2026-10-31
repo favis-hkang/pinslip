@@ -2,7 +2,12 @@ import { clipboard, globalShortcut } from 'electron';
 import type { WindowManager } from './windows/window-manager';
 import { getAdvanced } from './settings';
 import type { GlobalShortcutKey } from '../shared/types';
-import { GLOBAL_SHORTCUT_ACCELERATORS } from '../shared/shortcuts';
+import { GLOBAL_SHORTCUT_ACCELERATORS, shortcutKeysFor } from '../shared/shortcuts';
+
+/** 本平台可注册的键位映射（仅 Windows 键位在其他平台视同非法值 = 不注册） */
+const PLATFORM_ACCELERATORS: Record<string, string> = Object.fromEntries(
+  shortcutKeysFor(process.platform).map((key) => [key, GLOBAL_SHORTCUT_ACCELERATORS[key]]),
+);
 
 /** 预设键位全局快捷键的原子重绑器：白名单映射 + 当前绑定追踪 + 失败回滚 */
 interface ShortcutRebinder {
@@ -52,6 +57,7 @@ function createShortcutRebinder(
 /** 两个 rebinder 在 registerShortcuts 时创建（handler 复用启动时登记的那份） */
 let blankNoteRebinder: ShortcutRebinder | null = null;
 let quickCaptureRebinder: ShortcutRebinder | null = null;
+let toggleNotesRebinder: ShortcutRebinder | null = null;
 
 /** set-advanced 联动：按新键位原子重绑（共用池：两功能选同一键时后注册者失败回滚） */
 export function rebindBlankNoteShortcut(key: GlobalShortcutKey): void {
@@ -62,10 +68,14 @@ export function rebindQuickCaptureShortcut(key: GlobalShortcutKey): void {
   quickCaptureRebinder?.rebind(key);
 }
 
+export function rebindToggleNotesShortcut(key: GlobalShortcutKey): void {
+  toggleNotesRebinder?.rebind(key);
+}
+
 /** 注册全局快捷键。 */
 export function registerShortcuts(windowManager: WindowManager): void {
   // 速记浮窗：即使应用没有窗口打开也能呼出；键位按设置注册（缺省 Ctrl+Shift+N 现状）
-  quickCaptureRebinder = createShortcutRebinder('quick capture', GLOBAL_SHORTCUT_ACCELERATORS, () => {
+  quickCaptureRebinder = createShortcutRebinder('quick capture', PLATFORM_ACCELERATORS, () => {
     windowManager.showQuickCapture();
   });
   try {
@@ -76,10 +86,10 @@ export function registerShortcuts(windowManager: WindowManager): void {
 
   // 新建便签快捷键（缺省 off 不注册）：可选带入触发时的剪贴板纯文本。
   // 仅快捷键路径 focus，会话恢复/列表打开等建窗路径不抢焦点
-  blankNoteRebinder = createShortcutRebinder('blank note', GLOBAL_SHORTCUT_ACCELERATORS, () => {
+  blankNoteRebinder = createShortcutRebinder('blank note', PLATFORM_ACCELERATORS, () => {
     const advanced = getAdvanced();
     // 关闭后已排队的回调不再建窗；无效设置与 off 一致。
-    if (advanced.blankNoteShortcut === 'off' || !Object.hasOwn(GLOBAL_SHORTCUT_ACCELERATORS, advanced.blankNoteShortcut)) return;
+    if (advanced.blankNoteShortcut === 'off' || !Object.hasOwn(PLATFORM_ACCELERATORS, advanced.blankNoteShortcut)) return;
     let initialContent: string | undefined;
     if (advanced.blankNoteClipboard) {
       try {
@@ -99,6 +109,16 @@ export function registerShortcuts(windowManager: WindowManager): void {
   } catch (err) {
     console.error('[shortcut] blank note shortcut register failed at startup:', err);
   }
+
+  // 显示/隐藏全部便签（缺省 off 不注册）
+  toggleNotesRebinder = createShortcutRebinder('toggle notes', PLATFORM_ACCELERATORS, () => {
+    windowManager.toggleNotesVisibility();
+  });
+  try {
+    toggleNotesRebinder.rebind(getAdvanced().toggleNotesShortcut);
+  } catch (err) {
+    console.error('[shortcut] toggle notes shortcut register failed at startup:', err);
+  }
 }
 
 /** 注销全部全局快捷键（退出前调用）。unregisterAll 天然覆盖两个白名单快捷键。 */
@@ -106,4 +126,5 @@ export function unregisterShortcuts(): void {
   globalShortcut.unregisterAll();
   blankNoteRebinder?.reset();
   quickCaptureRebinder?.reset();
+  toggleNotesRebinder?.reset();
 }

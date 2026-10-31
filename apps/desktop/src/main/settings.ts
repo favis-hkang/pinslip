@@ -31,6 +31,7 @@ const ADVANCED_DEFAULTS: ResolvedAdvancedSettings = {
   blankNoteShortcut: 'off',
   blankNoteClipboard: false,
   quickCaptureShortcut: 'ctrl+shift+n',
+  toggleNotesShortcut: 'off',
   toolbarButtons: [...TOOLBAR_BUTTON_DEFAULT_ORDER],
 };
 

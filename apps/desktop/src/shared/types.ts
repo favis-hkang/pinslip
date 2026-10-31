@@ -164,7 +164,10 @@ export type GlobalShortcutKey =
   | 'ctrl+shift+q'
   | 'ctrl+alt+n'
   | 'ctrl+shift+alt+n'
-  | 'ctrl+alt+insert';
+  | 'ctrl+alt+insert'
+  | 'ctrl+shift+win+n'
+  | 'alt+win+n'
+  | 'shift+win+n';
 
 export type CopyAllFormat = 'markdown' | 'plain';
 
@@ -193,6 +196,8 @@ export interface AdvancedSettings {
   blankNoteClipboard?: boolean;
   /** 速记浮窗全局快捷键（缺省 'ctrl+shift+n' 保持现状）：按下呼出速记浮窗，'off' = 不注册 */
   quickCaptureShortcut?: GlobalShortcutKey;
+  /** 显示/隐藏全部便签窗口的全局快捷键（缺省 'off' 不注册） */
+  toggleNotesShortcut?: GlobalShortcutKey;
   /** 便签底部工具栏左区（编辑辅助区）按钮顺序：有序 id 列表，缺省 = 现状顺序。
    *  展示上限 8 个是展示约束（渲染层截取），不是存储约束；读写两侧都过
    *  sanitizeToolbarButtons（过滤未知 id/去重/缺项补末尾） */

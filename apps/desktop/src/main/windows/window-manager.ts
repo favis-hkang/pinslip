@@ -28,6 +28,12 @@ export class WindowManager {
   private resizeStartBounds = new Map<string, Electron.Rectangle>();
   /** 切换保险库中：此期间的关窗不退组（系统行为，不是用户意图） */
   private vaultSwitching = false;
+  /** 「隐藏全部便签」藏起的便签 id（为空 = 便签可见）；显示时只恢复这些 */
+  private hiddenNotes = new Set<string>();
+  /** 重新显示后恢复不透明度的定时器（见 showHiddenNotes）；再次切换时取消 */
+  private revealTimer: NodeJS.Timeout | null = null;
+  /** 便签显隐状态变化回调（托盘据此切换「显示/隐藏便签」菜单文案） */
+  onNotesVisibilityChanged: (() => void) | null = null;
   /** 便签组管理：成组/退组/restack/组态推送（启动时 load 拉注册表） */
   private readonly groupManager: GroupManager;
   /** 成组预告高亮映射：拖动方 noteId → 当前高亮目标 noteId（去重/清残用） */
@@ -46,6 +52,9 @@ export class WindowManager {
    *  folder 仅新建时有效：随窗口路由下发，首次保存落盘到该文件夹 */
   async createNoteWindow(noteId?: string, folder?: string, restoreInactive = false, initialContent?: string): Promise<string> {
     const id = noteId ?? crypto.randomUUID().replaceAll('-', '').slice(0, 16);
+
+    // 便签处于隐藏态时打开/新建便签：先全部显示，否则新窗与被藏的便签显隐不一
+    if (!restoreInactive) this.showHiddenNotes();
 
     const existing = this.noteWindows.get(id);
     if (existing && !existing.isDestroyed()) {
@@ -153,6 +162,7 @@ export class WindowManager {
     win.on('closed', () => {
       this.noteCloseGuard.remove(senderId);
       this.noteWindows.delete(id);
+      if (this.hiddenNotes.delete(id) && this.hiddenNotes.size === 0) this.onNotesVisibilityChanged?.();
       this.initialNoteContents.delete(id);
       // 成组预告残影清理：拖动方中途关窗，目标的高亮要收掉
       const hoverTarget = this.stackHoverTargets.get(id);
@@ -339,6 +349,58 @@ export class WindowManager {
       if (!win.isDestroyed()) win.close();
     }
     this.noteWindows.clear();
+  }
+
+  /** 便签是否处于「全部隐藏」态。 */
+  areNotesHidden(): boolean {
+    return this.hiddenNotes.size > 0;
+  }
+
+  /** 显示/隐藏全部便签窗口（托盘菜单 + 全局快捷键）：隐藏只藏当前可见的便签
+   *  （最小化的不动），显示只恢复被藏的那些且不抢焦点；主窗口/速记窗不受影响 */
+  toggleNotesVisibility(): void {
+    if (this.hiddenNotes.size > 0) {
+      this.showHiddenNotes();
+      return;
+    }
+    this.finishReveal();
+    for (const [id, win] of this.noteWindows) {
+      if (win.isDestroyed() || !win.isVisible() || win.isMinimized()) continue;
+      win.hide();
+      this.hiddenNotes.add(id);
+    }
+    if (this.hiddenNotes.size > 0) this.onNotesVisibilityChanged?.();
+  }
+
+  /** 隐藏后再显示：Chromium 先贴出旧画面，约 20ms 后换成空帧再淡入（约 200ms），
+   *  肉眼即「闪一下」。显示时先透明，等这段过去再恢复不透明，一次性出现 */
+  private showHiddenNotes(): void {
+    if (this.hiddenNotes.size === 0) return;
+    this.finishReveal();
+    const shown: BrowserWindow[] = [];
+    for (const id of this.hiddenNotes) {
+      const win = this.noteWindows.get(id);
+      if (!win || win.isDestroyed()) continue;
+      win.setOpacity(0);
+      win.showInactive();
+      shown.push(win);
+    }
+    this.revealTimer = setTimeout(() => {
+      this.revealTimer = null;
+      for (const win of shown) if (!win.isDestroyed()) win.setOpacity(1);
+    }, 250);
+    this.hiddenNotes.clear();
+    // 重新显示可能让置顶便签掉出置顶带（见 reassertPinnedNotes）
+    this.reassertPinnedNotes();
+    this.onNotesVisibilityChanged?.();
+  }
+
+  /** 取消待恢复的不透明度并立即恢复（再次切换时调用，避免便签卡在透明态） */
+  private finishReveal(): void {
+    if (!this.revealTimer) return;
+    clearTimeout(this.revealTimer);
+    this.revealTimer = null;
+    for (const win of this.noteWindows.values()) if (!win.isDestroyed()) win.setOpacity(1);
   }
 
   /** 当前打开的便签窗口 id 列表。 */

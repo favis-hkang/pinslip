@@ -54,6 +54,14 @@ export function refreshTrayMenu(): void {
     qcKey !== 'off' && qcLabelKey
       ? tMain('tray.quickWithKey', { key: tMain(qcLabelKey) })
       : tMain('tray.quick');
+  // 显示/隐藏便签：文案随当前显隐态切换，同速记项带出键位
+  const notesKey = getAdvanced().toggleNotesShortcut;
+  const notesLabelKey = GLOBAL_SHORTCUT_LABEL_KEYS[notesKey as Exclude<GlobalShortcutKey, 'off'>];
+  const notesAction = windowManager.areNotesHidden() ? 'tray.showNotes' : 'tray.hideNotes';
+  const notesLabel =
+    notesKey !== 'off' && notesLabelKey
+      ? tMain(`${notesAction}WithKey`, { key: tMain(notesLabelKey) })
+      : tMain(notesAction);
   const contextMenu = Menu.buildFromTemplate([
     {
       label: tMain('header.create'),
@@ -64,6 +72,7 @@ export function refreshTrayMenu(): void {
       },
     },
     { label: quickLabel, click: () => windowManager.showQuickCapture() },
+    { label: notesLabel, click: () => windowManager.toggleNotesVisibility() },
     { type: 'separator' },
     { label: tMain('tray.openMain'), click: () => windowManager.showMainWindow() },
     { type: 'separator' },
@@ -78,6 +87,7 @@ export function createTray(windowManager: WindowManager): Tray {
   if (trayRef) destroyTray();
   trayRef = new Tray(loadTrayIcon());
   windowManagerRef = windowManager;
+  windowManager.onNotesVisibilityChanged = refreshTrayMenu;
   refreshTrayMenu();
   trayRef.setToolTip('PinSlip');
   trayRef.on('click', () => windowManager.toggleMainWindow());
@@ -88,5 +98,6 @@ export function createTray(windowManager: WindowManager): Tray {
 export function destroyTray(): void {
   trayRef?.destroy();
   trayRef = null;
+  if (windowManagerRef) windowManagerRef.onNotesVisibilityChanged = null;
   windowManagerRef = null;
 }
